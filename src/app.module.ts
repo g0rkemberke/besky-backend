@@ -1,8 +1,11 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config'; // Config modüllerini ekledik
+import { ConfigModule, ConfigService } from '@nestjs/config'; 
 import { MongooseModule } from '@nestjs/mongoose';
 import { FlightsModule } from './flights/flights.module';
 import { AuthModule } from './auth/auth.module';
+
+// --- KRİTİK EKLENTİ: CONCIERGE MODÜLÜ İÇERİ ALINDI ---
+import { ConciergeModule } from './concierge/concierge.module';
 
 @Module({
   imports: [
@@ -22,6 +25,7 @@ import { AuthModule } from './auth/auth.module';
 
     FlightsModule,
     AuthModule,
+    ConciergeModule, // --- SİSTEME TANITILDI ---
   ],
 })
 export class AppModule {}

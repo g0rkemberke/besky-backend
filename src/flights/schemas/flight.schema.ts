@@ -41,6 +41,13 @@ export class Flight extends Document {
 
   @Prop([String]) // Çoklu resimler için dizi yapısı
   images: string[];
+
+  // --- REZERVASYON KONTROL ALANLARI ---
+  @Prop({ default: false })
+  isBooked: boolean;
+
+  @Prop()
+  bookedBy: string; 
 }
 
 export const FlightSchema = SchemaFactory.createForClass(Flight);

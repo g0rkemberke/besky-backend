@@ -23,14 +23,15 @@ export class AuthService {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // 3. ADIM: Kayıt (Konsola yazdırıyoruz ki terminalden takip et)
+    // 3. ADIM: Kayıt
     console.log('--- MONGODB KAYIT DENENİYOR ---', email);
     
     const newUser = new this.userModel({
       fullName,
       email,
       password: hashedPassword,
-      role: 'user' // Varsayılan rol ekledik
+      role: 'user',
+      preferences: {} // Kayıt anında boş bir tercih objesi oluşturuyoruz
     });
 
     const savedUser = await newUser.save();
@@ -65,14 +66,28 @@ export class AuthService {
     };
   }
 
+  // --- EKLENEN KISIM: Profil yenileme için kullanıcıyı bulma ---
+  async findById(userId: string) {
+    const user = await this.userModel.findById(userId).select('-password');
+    if (!user) throw new UnauthorizedException('Kullanıcı bulunamadı!');
+    return user;
+  }
+
+  // GÜNCELLENEN KISIM: Profil Bilgilerini ve Tercihleri Kaydeden Metot
   async updateUser(userId: string, data: any) {
-    console.log('--- GÜNCELLEME İSTEĞİ --- ID:', userId);
+    console.log('--- GÜNCELLEME İSTEĞİ GELİYOR --- ID:', userId);
     
-    const { password, email, _id, ...updateableData } = data;
+    // Güvenlik: Kritik alanların manuel olarak değiştirilmesini engelliyoruz
+    const { password, email, _id, role, ...updateableData } = data;
+
+    // Terminalde veriyi görmek için log (Opsiyonel)
+    if (updateableData.preferences) {
+      console.log('--- KAYDEDİLECEK TERCİHLER ---', updateableData.preferences);
+    }
 
     const updatedUser = await this.userModel.findByIdAndUpdate(
       userId,
-      { $set: updateableData },
+      { $set: updateableData }, // Bu operatör objeyi olduğu gibi (beverage, chauffeur vb.) MongoDB'ye basar
       { new: true } 
     ).select('-password'); 
 
@@ -80,7 +95,7 @@ export class AuthService {
       throw new UnauthorizedException('Kullanıcı bulunamadı!');
     }
 
-    console.log('--- GÜNCELLEME BAŞARILI ---');
+    console.log('--- ELITE TERCİHLER MONGODB\'YE MÜHÜRLENDİ ---');
     
     return {
       user: updatedUser,
