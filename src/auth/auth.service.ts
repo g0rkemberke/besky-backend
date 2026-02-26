@@ -19,7 +19,7 @@ export class AuthService {
     const exists = await this.userModel.findOne({ email });
     if (exists) throw new ConflictException('Bu e-posta zaten kullanımda!');
 
-    // 2. ADIM: Şifreleme
+    // 2. ADIM: Şifreleme (Bcrypt Zırhı)
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
@@ -37,7 +37,12 @@ export class AuthService {
     const savedUser = await newUser.save();
     console.log('--- MONGODB KAYIT BAŞARILI! ID: ---', savedUser._id);
     
-    return savedUser;
+    // Şifreyi MongoDB'ye kaydettik ama Frontend'e geri GÖNDERMİYORUZ (Güvenlik)
+    const userObject = savedUser.toObject();
+    // TypeScript hatasını çözen Destructuring yöntemi:
+    const { password: _, ...userWithoutPassword } = userObject;
+    
+    return userWithoutPassword;
   }
 
   async login(email: string, pass: string) {
@@ -46,49 +51,61 @@ export class AuthService {
     const user = await this.userModel.findOne({ email });
     if (!user) throw new UnauthorizedException('Geçersiz bilgiler!');
 
+    // Bcrypt ile şifre eşleştirme
     const isMatch = await bcrypt.compare(pass, user.password);
     if (!isMatch) throw new UnauthorizedException('Geçersiz bilgiler!');
 
     const userObject = user.toObject();
     const { password, ...userWithoutPassword } = userObject;
 
+    // JWT Token İçeriği (Payload)
     const payload = { 
       email: userObject.email, 
       sub: userObject._id, 
       role: userObject.role 
     };
 
-    console.log('--- GİRİŞ BAŞARILI, TOKEN OLUŞTURULDU ---');
+    console.log('--- GİRİŞ BAŞARILI, VIP TOKEN OLUŞTURULDU ---');
     
     return {
       user: userWithoutPassword,
-      access_token: this.jwtService.sign(payload),
+      access_token: this.jwtService.sign(payload), // Güvenli Token
     };
   }
 
-  // --- EKLENEN KISIM: Profil yenileme için kullanıcıyı bulma ---
+  // --- Profil yenileme için kullanıcıyı bulma ---
   async findById(userId: string) {
     const user = await this.userModel.findById(userId).select('-password');
     if (!user) throw new UnauthorizedException('Kullanıcı bulunamadı!');
     return user;
   }
 
-  // GÜNCELLENEN KISIM: Profil Bilgilerini ve Tercihleri Kaydeden Metot
+  //  Profil Bilgilerini Güncelleme 
   async updateUser(userId: string, data: any) {
     console.log('--- GÜNCELLEME İSTEĞİ GELİYOR --- ID:', userId);
     
-    // Güvenlik: Kritik alanların manuel olarak değiştirilmesini engelliyoruz
-    const { password, email, _id, role, ...updateableData } = data;
+    //  ÇELİK KASA : Sistemsel ve Finansal alanlar
+    const { 
+      password, 
+      email, 
+      _id, 
+      role, 
+      beskyCoin,         
+      membershipType,    
+      createdAt,         
+      updatedAt,         
+      __v,
+      ...updateableData 
+    } = data;
 
-    // Terminalde veriyi görmek için log (Opsiyonel)
     if (updateableData.preferences) {
       console.log('--- KAYDEDİLECEK TERCİHLER ---', updateableData.preferences);
     }
 
     const updatedUser = await this.userModel.findByIdAndUpdate(
       userId,
-      { $set: updateableData }, // Bu operatör objeyi olduğu gibi (beverage, chauffeur vb.) MongoDB'ye basar
-      { new: true } 
+      { $set: updateableData },
+      { new: true, runValidators: true } 
     ).select('-password'); 
 
     if (!updatedUser) {
