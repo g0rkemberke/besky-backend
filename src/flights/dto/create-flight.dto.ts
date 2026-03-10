@@ -12,4 +12,7 @@ export class CreateFlightDto {
   readonly discount: string;
   readonly timeLeft: number;
   readonly images: string[];
+  readonly distanceNM?: number;
+  readonly flightDuration?: string;
+  readonly arrivalTimeLocal?: string;
 }
