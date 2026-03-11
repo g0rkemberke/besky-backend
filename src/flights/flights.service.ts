@@ -18,8 +18,8 @@ export class FlightsService {
   constructor(@InjectModel(Flight.name) private flightModel: Model<Flight>) {}
   
   // Haversine Formülü: Dereceyi Radyana Çevirir
-  private deg2rad(deg: number): number {
-    return deg * (Math.PI / 180);
+  private deg2rad(deg: number): number { 
+    return deg * (Math.PI / 180); 
   }
 
   // Küre üzerinde iki nokta arası Deniz Mili (NM) hesabı
@@ -38,28 +38,31 @@ export class FlightsService {
     let distanceNM = 0;
     let flightDuration = "Hesaplanamadı";
     let arrivalTimeLocal = "Bilinmiyor";
+    let fuelBurnKg = 0;
+    let fuelCostEuro = 0;
 
     try {
-      // 1. Havalimanı verilerini çek
       const fromData = AIRPORT_DATA[createFlightDto.fromCode];
       const toData = AIRPORT_DATA[createFlightDto.toCode];
 
-      // Eğer seçilen havalimanları sözlüğümüzde varsa hesapla (PVT değilse)
       if (fromData && toData) {
-        // 2. Mesafeyi bul
+        // 1. Mesafe Hesabı
         distanceNM = this.calculateDistance(fromData.lat, fromData.lon, toData.lat, toData.lon);
-
-        // 3. Süreyi bul (450 Knot Hız + 30dk İniş/Kalkış)
+        
+        // 2. Süre Hesabı (450 Knot Hız + 30dk Pay)
         const flightHoursTotal = (distanceNM / 450) + 0.5; 
+        
+        // 3. Yakıt Algoritması (Ortalama 800kg/saat tüketim, 1.2€/kg fiyat)
+        fuelBurnKg = Math.round(flightHoursTotal * 800);
+        fuelCostEuro = Math.round(fuelBurnKg * 1.2);
+
         const hours = Math.floor(flightHoursTotal);
         const mins = Math.round((flightHoursTotal - hours) * 60);
         flightDuration = `${hours}s ${mins}dk`;
 
-        // 4. Varış yerel saatini bul
+        // 4. Varış Yerel Saati Hesabı
         if (createFlightDto.date && createFlightDto.time) {
-          const departureString = `${createFlightDto.date}T${createFlightDto.time}:00Z`;
-          const departureDate = new Date(departureString);
-          
+          const departureDate = new Date(`${createFlightDto.date}T${createFlightDto.time}:00Z`);
           if (!isNaN(departureDate.getTime())) { 
             const arrivalDateUTC = new Date(departureDate.getTime() + (flightHoursTotal * 60 * 60 * 1000));
             arrivalTimeLocal = new Intl.DateTimeFormat('tr-TR', {
@@ -70,37 +73,47 @@ export class FlightsService {
           }
         }
       }
-    } catch (error) {
-      console.error("Hesaplama motoru hatası:", error);
-      // Hata olsa bile sunucu çökmez, uçuşu kaydeder
+    } catch (error) { 
+      console.error("Hesaplama motoru hatası:", error); 
     }
 
-    // Nihai uçuş verisini oluştur ve veritabanına kaydet
     const createdFlight = new this.flightModel({
       ...createFlightDto,
       isBooked: false,
       distanceNM,
       flightDuration,
-      arrivalTimeLocal
+      arrivalTimeLocal,
+      fuelBurnKg,
+      fuelCostEuro
     });
     
     return createdFlight.save();
   }
 
   async findAll(): Promise<Flight[]> {
-    return this.flightModel.find({ isBooked: { $ne: true } }).exec();
+    // Aktif uçuşları en yeni en üstte olacak şekilde getirir
+    return this.flightModel.find({ isBooked: { $ne: true } }).sort({ createdAt: -1 }).exec();
   }
 
   async findBookedFlights(): Promise<Flight[]> {
-    return this.flightModel.find({ isBooked: true }).exec();
+    // Satılan uçuşları son satılana göre getirir
+    return this.flightModel.find({ isBooked: true }).sort({ updatedAt: -1 }).exec();
+  }
+
+  async remove(id: string): Promise<any> {
+    const result = await this.flightModel.findByIdAndDelete(id).exec();
+    if (!result) throw new NotFoundException('Uçuş bulunamadı.');
+    return { success: true, message: 'Uçuş kalıcı olarak silindi.' };
   }
 
   async bookFlight(flightId: string, userEmail: string): Promise<Flight> {
-    const query = Types.ObjectId.isValid(flightId) ? { _id: flightId } : { id: flightId };
+    const query = Types.ObjectId.isValid(flightId) ? { _id: new Types.ObjectId(flightId) } : { id: flightId };
+    
+    // 'async' düzeltildi ve 'new: true' eklendi
     const updatedFlight = await this.flightModel.findOneAndUpdate(
-      query,
-      { $set: { isBooked: true, bookedBy: userEmail } },
-      { returnDocument: 'after' } 
+      query, 
+      { $set: { isBooked: true, bookedBy: userEmail } }, 
+      { new: true } 
     ).exec();
 
     if (!updatedFlight) throw new NotFoundException('Uçuş mühürlenemedi.');
@@ -108,11 +121,11 @@ export class FlightsService {
   }
 
   async unbookFlight(flightId: string): Promise<Flight> {
-    const query = Types.ObjectId.isValid(flightId) ? { _id: flightId } : { id: flightId };
+    const query = Types.ObjectId.isValid(flightId) ? { _id: new Types.ObjectId(flightId) } : { id: flightId };
     const resetFlight = await this.flightModel.findOneAndUpdate(
       query,
       { $set: { isBooked: false, bookedBy: null } },
-      { returnDocument: 'after' }
+      { new: true }
     ).exec();
 
     if (!resetFlight) throw new NotFoundException('Uçuş bulunamadı.');
